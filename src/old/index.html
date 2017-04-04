@@ -1,0 +1,128 @@
+<html>
+<head>
+	<title>AU Network Calculator</title>
+	<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/css/bootstrap.min.css" />
+	<style>
+		
+	</style>
+</head>
+
+<body>
+	<div class="row">
+		<div class="col-sm-8 col-sm-offset-2">
+			<form>
+			<div class="form-group">
+				<label for="au">AU Number (US, Capna or Canada)</label>
+				<input class="form-control" type="text" name="au" onkeyup="calculateSubnet()" id="au">
+				
+			</div>
+			<div class="form-group">
+				<label for="ip">IP Address (US, Capna or Canada)</label>
+				<input class="form-control" type="text" name="IP" onkeyup="getAUGivenIP()" id="ip">
+			</div>
+			
+
+			<div id="result"></div>
+			</form>
+		</div>
+	</div>
+</body>
+
+
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.1.1/jquery.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/3.3.7/js/bootstrap.min.js"></script>
+<script>
+
+/*
+Formula to determine second and third octete given au number
+IP format of 10.x.y.0; where x is the second octet and y is the third octet
+
+Written by: Andrew Crawford
+*/
+
+	let networks = {
+		182: 80100,
+		40: 4000,
+		50: 101
+	};
+
+	function calculateSubnet() {
+		let auCurrent = document.getElementById("au").value;
+		
+
+		let x,
+		auStart;
+
+		if(/^80/.test(auCurrent))
+		{
+			auStart = 80100,
+			x = 182;
+		} 
+		else if(/^4/.test(auCurrent) && auCurrent.length > 3)
+		{
+			auStart = 4000,
+			x = 40;
+		}
+		else
+		{
+			auStart = 101,
+			x = 50;
+		}
+		
+		//x = x + Math.floor(((auCurrent-auStart)*2)/256);
+		//we managed to use /128 because 256 divided by 2 is 128. We have 2 because each network has two /24's allocated to it.
+		x = x + Math.floor((auCurrent-auStart)/128);
+		
+		//We use 254 because a hospital will never be assigned 255 because each hospital has 2 /24 networks assigned.
+		y = ((auCurrent - auStart)*2) - (Math.floor(((auCurrent - auStart)*2)/255)*256);
+		//y = -1 * ((auStart - auCurrent - Math.floor((auCurrent-auStart)/128))*2) - (254*Math.floor((auCurrent-auStart)/128));
+
+		document.getElementById('result').innerHTML = "10."+x+"."+y+".0/24";
+
+	}
+
+	function getAUGivenIP()
+	{
+		let ip = document.getElementById("ip").value;
+		
+
+		//array of [10, 185, 0, 0]
+		var octets = ip.split(".");
+		let x = 0, i = 0, auStart = null;
+
+		//does 185, 184, 183, 182, set auStart = 80100, x = 182
+		if(octets[1] > 39)
+		{
+			x = findX(octets[1]);
+
+			auStart = networks[x];
+
+			//E4= second octet given
+			//F4 = third octet
+
+			//=80100+128*(E4-182)+F4/2
+			//auStart + 128(octet[1]-x) + octet[2]/2
+			au =  Math.floor(auStart + (octets[1]-x)*128 + octets[2]/2);
+
+			//need to figure out how many jumps we made on the second octete, then on the second.
+			document.getElementById('result').innerHTML = au;
+		}
+	}
+
+	function findX(octet)
+	{
+		if(!networks.hasOwnProperty(octet))
+		{
+			return findX(octet-1);
+		}
+		else
+		{
+			return (octet);
+		}
+	}
+
+</script>
+
+
+</html>
