@@ -2,12 +2,12 @@
 
 This is the first ever command line interface for Meraki. 
 
+This is still a work in progress and is no where near complete. Use at your own risk currently.
+
 ## Commands
 
 ### Organization Wide Commands
 
-`meraki network list` will list all networks in a given organization
-`meraki network create` will create a network given
-More in the documentation section. 
+
 
 
