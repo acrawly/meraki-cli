@@ -95,6 +95,10 @@ if (program.list)
                                 }
                             });
 
+                            networks = _.map(networks, function(network, key) {
+                                return networks[key];
+                            });
+
                             if(program.export)
                             {
                                 //export to file, defaults to json but can optonally change to .csv format. 
@@ -118,7 +122,10 @@ if (program.list)
                 if(program.export)
                 {
                     //export to file, defaults to json but can optonally change to .csv format. 
+
                     fs.writeFileSync(program.export, JSON.stringify(networks,null,4), 'utf8');
+
+                    
                 }
                 else
                 {
