@@ -1,9 +1,237 @@
 #!/usr/bin/env node
 'use strict';
+
 const program = require('commander');
+const axios = require('axios');
+const fs = require('fs');
+const prompt = require('prompt');
+const _ = require("underscore");
+var sleep = require('sleep-promise');
+var json2csv = require('json2csv');
+
+/**
+ * For prompt validation
+ */
+var schema = {
+    properties: {
+      name: {
+        pattern: /^[a-zA-Z\s\-]+$/,
+        message: 'Name must be only letters, spaces, or dashes',
+        required: true
+      },
+      password: {
+        hidden: true
+      }
+    }
+  };
+
 
 program
-    .version('0.0.1')
-    .command('network', 'network description')
-    .parse(process.argv);
+  .version('0.0.1')
+  .description('A command line app for meraki networks')
+  .option('-l, --list', 'List meraki networks')
+  .option('--wan', 'Includes WAN IP information per network')
+  .option('-e, --export <filt_path>', 'Optionally export the results to a file')
+  .option('-C, --no-cheese', 'You do not want any cheese')
+  .parse(process.argv);
+
+console.log('Processing your request...');
+
+if (program.list)
+{
+    //okay list networks
+    //done1. Grab meraki API keys which are stored in api_key.json
+    //done2. If file doesn't exist, prompt for keys and save
+    //3. Make HTTP Get request for Meraki list
+    //4. If filter if also present, do a filter on data and return result
+    //5. If file path is specified, export results to file
+    getAPIKey().then(function(opts) {
+        //build url string for networks
+        console.log("Querying Meraki...");
+        let url = "https://dashboard.meraki.com/api/v0/organizations/"+opts.organization+"/networks";
+        let api_key = opts.api_key;
+        
+        const networks = axios.get(url, {
+            headers: {
+                'X-Cisco-Meraki-API-Key': api_key,
+            },
+        }).then((response) => {
+
+            let networks = response.data;
+            
+            //Do check if we need to get WAN information per network...
+            if(program.wan)
+            {   
+                console.log("Finding WAN information for networks...");
+                
+                
+                let promises = [];
+                var processNetworks = function(i) {
+                    
+                    console.log("Processing " + networks[i].id);
+                    
+                    if(i < response.data.length-1){
+                        sleep(500).then(function() {
+                            promises.push(getWANGivenNetwork(networks[i].id, url, api_key));
+                            processNetworks(++i); //works
+                        }).catch(function(err) {
+                            console.log(err);
+                        });
+                    }
+                    else
+                    {
+                        Promise.all(promises).then(function(routers) {
+                            
+                            
+                            _.each(routers, function(router) {
+                                
+                                //ok first I need to check if this network is in my list and add the properties.
+                                if(router[0] && router[0].id)
+                                {
+                                    networks = _.indexBy(networks, 'id');
+                                    //now find this ID in the networks array
+                                    networks[router[0].id].wan1IP = router[0].wan1Ip;
+                                    networks[router[0].id].wan2IP = router[0].wan2Ip;
+                                }
+                            });
+
+                            if(program.export)
+                            {
+                                //export to file, defaults to json but can optonally change to .csv format. 
+                                fs.writeFileSync(program.export, JSON.stringify(networks,null,4), 'utf8');
+                            }
+                            else
+                            {
+                                console.log(networks);
+                            }
+
+                        }).catch(function(err) {
+                            console.error(err);
+                        });
+                    }
+                    
+                }
+                processNetworks(0);
+            }
+            else
+            {
+                if(program.export)
+                {
+                    //export to file, defaults to json but can optonally change to .csv format. 
+                    fs.writeFileSync(program.export, JSON.stringify(networks,null,4), 'utf8');
+                }
+                else
+                {
+                    console.log(networks);
+                }
+            }
+
+             
+           
+        }).catch(function(err) {
+            console.error(err);
+        });
+    }).catch(function(err) {
+        console.error(err);
+    });
+    
+
+
+}
+
+
+function mergeByProperty(arr1, arr2, prop) {
+    _.each(arr2, function(arr2obj) {
+        var arr1obj = _.find(arr1, function(arr1obj) {
+            return arr1obj[prop] == arr2obj[prop];
+        });
+
+        arr1obj ? _.extend(arr1obj, arr2obj) : arr1.push(arr2obj);
+    });
+}
+
+
+function getWANGivenNetwork(network_id, url, api_key)
+{
+    return new Promise(function(resolve, reject) {
+        url += "/"+network_id+"/devices";
+
+        const devices = axios.get(url, {
+            headers: {
+                'X-Cisco-Meraki-API-Key': api_key,
+            },
+        }).then((response) => {
+            let devices = response.data;
+            //response of devices for this network
+            
+            devices = devices.reduce(function(routers, device) {
+                if (device.model && device.model.toUpperCase().includes("MX")) { // this serves as our `filter`
+                    routers.push({ // this serves as our `map`
+                        id: device.networkId,
+                        wan1Ip:device.wan1Ip,
+                        wan2Ip: device.wan2Ip
+                    });
+                }
+                
+                return routers;
+            }, []);
+
+            
+            resolve(devices);
+
+        }).catch(function(err) {
+            console.error(err);
+        });
+
+
+    })
+
+}
+
+/**
+ * Reads api_key.json and returns the key in format of {organization_number:api_key}
+ */
+function getAPIKey()
+{
+    return new Promise(function(resolve, reject) {
+        fs.readFile("api_key.json", 'utf8', function(err, data) {
+            if(err)
+            {
+                if(err.errno === -2)
+                {
+                    //file does not exist, prompt to create file.
+                    console.log("The file does not exist, please give us the following informaiton and we'll save it for you...");
+                    let api_key = {};
+                    
+                    prompt.start();
+
+                    prompt.get(['organization_number', 'api_key'], function (err, result) {
+                        api_key.organization = result.organization_number;
+                        api_key.api_key = result.api_key;
+                        console.log("Saving information to api_key.json...");
+                        fs.writeFileSync("api_key.json", JSON.stringify(api_key), 'utf8');
+                        resolve(api_key);
+                    });
+                }
+                else
+                {
+                    reject(err);
+                }
+                
+            }
+            else
+            {
+                data = JSON.parse(data);
+                resolve(data);
+            }
+        });
+    });
+}
+
+/*var cheese = true === program.cheese
+  ? 'marble'
+  : program.cheese || 'no';
+
+console.log('  - %s cheese', cheese);*/
+//console.log(program.args);
 
