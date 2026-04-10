@@ -16,7 +16,7 @@
   "author": "Andrew Crawford",
   "license": "MIT",
   "dependencies": {
-    "axios": "^0.16.2",
+    "axios": "^1.15.0",
     "commander": "^2.9.0",
     "fs": "0.0.1-security",
     "json2csv": "^3.8.0",
